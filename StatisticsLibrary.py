@@ -14,10 +14,28 @@ def get_creds():
 # Создание асинхронного клиента gspread
 agcm = gspread_asyncio.AsyncioGspreadClientManager(get_creds)
 
+# Функция для получения ответа 'Да' или 'Нет'
+def get_yes_no_input(prompt):
+    while True:
+        response = input(prompt).strip().lower()
+        if response in ('да', 'нет'):
+            return response
+        else:
+            print("Пожалуйста, введите 'Да' или 'Нет'.")
+
+# Функция для получения ответа о выборе статистики
+def get_statistics_choice(prompt):
+    while True:
+        response = input(prompt).strip().lower()
+        if response in ('все', 'группа'):
+            return response
+        else:
+            print("Пожалуйста, введите 'Все' или 'Группа'.")
+
 # Метод для добавления нового студента
 async def add_student(student_name, group, worksheet, absences=0):
     try:
-        new_row = [student_name, group, absences if absences else '', '']
+        new_row = [student_name, group, absences if absences else '', absences if absences else '']
         await worksheet.append_row(new_row)
         print(f"Студент {student_name} добавлен в таблицу с группой {group}. Пропуски: {absences if absences else 'нет'}")
     except Exception as e:
@@ -29,10 +47,14 @@ async def add_absences(student_name, absences, worksheet):
         student_cell = await worksheet.find(student_name)
         if not student_cell:
             print(f"Студент '{student_name}' не найден.")
+            add_student_choice = get_yes_no_input("Добавить нового студента? (Да/Нет): ")
+            if add_student_choice == 'да':
+                group = input("Введите номер группы студента: ").strip()
+                await add_student(student_name, group, worksheet, absences)
             return
 
-        absence_column = student_cell.col + 2  # 3-й столбец для "с 21 по 27 октября"
-        total_absences_column = student_cell.col + 3  # 4-й столбец для "За полугодие"
+        absence_column = student_cell.col + 2
+        total_absences_column = student_cell.col + 3
 
         current_absences_cell = await worksheet.cell(student_cell.row, absence_column)
         current_absences = current_absences_cell.value
@@ -75,20 +97,20 @@ async def update_date_column_header(new_date_range, worksheet):
         print(f"Ошибка при обновлении заголовка: {e}")
 
 # Метод для вывода полной статистики
-async def print_full_statistics(worksheet):
+async def print_full_statistics(worksheet, group=None):
     try:
         records = await worksheet.get_all_values()
 
         col_widths = [max(len(str(cell)) for cell in col) for col in zip(*records)]
-
         header = records[0]
         header_format = " | ".join(f"{header[i]:<{col_widths[i]}}" for i in range(len(header)))
         print(header_format)
         print("-" * len(header_format))
 
         for row in records[1:]:
-            row_format = " | ".join(f"{row[i]:<{col_widths[i]}}" for i in range(len(row)))
-            print(row_format)
+            if group is None or row[1] == group:
+                row_format = " | ".join(f"{row[i]:<{col_widths[i]}}" for i in range(len(row)))
+                print(row_format)
 
     except Exception as e:
         print(f"Ошибка при выводе статистики: {e}")
@@ -108,13 +130,13 @@ async def main():
     choice = input("Введите номер действия (1, 2, 3 или 4): ").strip()
 
     if choice == '1':
-        change_date = input("Поменять дату? (Да/Нет): ").strip().lower()
+        change_date = get_yes_no_input("Поменять дату? (Да/Нет): ")
         if change_date == 'да':
             new_date_range = input("Введите новый диапазон дат (например, 'с 1 по 7 октября'): ").strip()
             await update_date_column_header(new_date_range, worksheet)
 
     elif choice == '2':
-        add_absence = input("Добавить пропуски студенту? (Да/Нет): ").strip().lower()
+        add_absence = get_yes_no_input("Добавить пропуски студенту? (Да/Нет): ")
         if add_absence == 'да':
             student_name = input("Введите ФИО студента для отметки пропусков: ").strip()
             absences = input(f"Введите количество пропусков для студента {student_name}: ").strip()
@@ -125,13 +147,18 @@ async def main():
                 print("Ошибка: количество пропусков должно быть числом.")
 
     elif choice == '3':
-        await print_full_statistics(worksheet)
+        specific_group = get_statistics_choice("Вывести статистику для всех студентов или конкретной группы? (Все/Группа): ")
+        if specific_group == 'группа':
+            group = input("Введите номер группы: ").strip()
+            await print_full_statistics(worksheet, group)
+        else:
+            await print_full_statistics(worksheet)
 
     elif choice == '4':
         student_name = input("Введите ФИО нового студента: ").strip()
         group = input("Введите номер группы студента: ").strip()
 
-        add_absence = input("Ввести пропуски для студента? (Да/Нет): ").strip().lower()
+        add_absence = get_yes_no_input("Ввести пропуски для студента? (Да/Нет): ")
         if add_absence == 'да':
             absences = input(f"Введите количество пропусков для студента {student_name}: ").strip()
             if absences.isdigit():
